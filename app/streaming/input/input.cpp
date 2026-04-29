@@ -20,8 +20,9 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
       m_PointerRegionLockActive(false),
       m_PointerRegionLockToggledByUser(false),
       m_FakeCaptureActive(false),
+      m_AppWindowMode(prefs.appWindowMode),
       m_CaptureSystemKeysMode(prefs.captureSysKeysMode),
-      m_MouseCursorCapturedVisibilityState(prefs.absoluteMouseMode ? SDL_ENABLE : SDL_DISABLE),
+      m_MouseCursorCapturedVisibilityState(prefs.appWindowMode ? SDL_ENABLE : SDL_DISABLE),
       m_LongPressTimer(0),
       m_StreamWidth(streamWidth),
       m_StreamHeight(streamHeight),
@@ -270,6 +271,10 @@ void SdlInputHandler::raiseAllKeys()
 
 void SdlInputHandler::notifyMouseLeave()
 {
+    if (m_AppWindowMode) {
+        return;
+    }
+
     // SDL on Windows doesn't send the mouse button up until the mouse re-enters the window
     // after leaving it. This breaks some of the Aero snap gestures, so we'll capture it to
     // allow us to receive the mouse button up events later.
@@ -373,6 +378,15 @@ bool SdlInputHandler::isSystemKeyCaptureActive()
 
 void SdlInputHandler::setCaptureActive(bool active)
 {
+    if (m_AppWindowMode) {
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+        SDL_ShowCursor(SDL_ENABLE);
+        m_FakeCaptureActive = active;
+        updatePointerRegionLock();
+        updateKeyboardGrabState();
+        return;
+    }
+
     if (active) {
         // If we're in relative mode, try to activate SDL's relative mouse mode
         if (m_AbsoluteMouseMode || SDL_SetRelativeMouseMode(SDL_TRUE) < 0) {

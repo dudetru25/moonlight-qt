@@ -260,6 +260,17 @@ bool SdlInputHandler::isMouseInVideoRegion(int mouseX, int mouseY, int windowWid
 
 void SdlInputHandler::updatePointerRegionLock()
 {
+    if (m_AppWindowMode) {
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        SDL_SetWindowMouseRect(m_Window, nullptr);
+#elif SDL_VERSION_ATLEAST(2, 0, 15)
+        SDL_SetWindowMouseGrab(m_Window, SDL_FALSE);
+#else
+        SDL_SetWindowGrab(m_Window, SDL_FALSE);
+#endif
+        return;
+    }
+
     // Pointer region lock is irrelevant in relative mouse mode
     if (SDL_GetRelativeMouseMode()) {
         return;
