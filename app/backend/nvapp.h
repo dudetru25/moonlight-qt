@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QSettings>
+#include <QString>
 
 class NvApp
 {
@@ -14,6 +15,14 @@ public:
                 name == other.name &&
                 hdrSupported == other.hdrSupported &&
                 isAppCollectorGame == other.isAppCollectorGame &&
+                streamResolution == other.streamResolution &&
+                clientDisplayMode == other.clientDisplayMode &&
+                autoSpawnFrom == other.autoSpawnFrom &&
+                appWindowReady == other.appWindowReady &&
+                clientAppWindowSet == other.clientAppWindowSet &&
+                clientAppWindow == other.clientAppWindow &&
+                clientAbsoluteMouseSet == other.clientAbsoluteMouseSet &&
+                clientAbsoluteMouse == other.clientAbsoluteMouse &&
                 hidden == other.hidden &&
                 directLaunch == other.directLaunch;
     }
@@ -33,8 +42,16 @@ public:
 
     int id = 0;
     QString name;
+    QString streamResolution;
+    QString clientDisplayMode;
+    QString autoSpawnFrom;
     bool hdrSupported = false;
     bool isAppCollectorGame = false;
+    bool appWindowReady = false;
+    bool clientAppWindowSet = false;
+    bool clientAppWindow = false;
+    bool clientAbsoluteMouseSet = false;
+    bool clientAbsoluteMouse = false;
     bool hidden = false;
     bool directLaunch = false;
 };

@@ -2,7 +2,11 @@
 
 #include <QSemaphore>
 #include <QQuickWindow>
+#include <QScopedPointer>
+#include <QSet>
 
+#include <atomic>
+#include <thread>
 #include <Limelight.h>
 #include <opus_multistream.h>
 #include "settings/streamingpreferences.h"
@@ -171,6 +175,10 @@ private:
 
     void updateOptimalWindowDisplayMode();
 
+    void startAppWindowChildWatcher();
+
+    void stopAppWindowChildWatcher();
+
     enum class DecoderAvailability {
         None,
         Software,
@@ -242,6 +250,7 @@ private:
     static
     int drSubmitDecodeUnit(PDECODE_UNIT du);
 
+    QScopedPointer<StreamingPreferences> m_SessionPreferences;
     StreamingPreferences* m_Preferences;
     bool m_IsFullScreen;
     SupportedVideoFormatList m_SupportedVideoFormats; // Sorted in order of descending priority
@@ -280,6 +289,9 @@ private:
     Uint32 m_DropAudioEndTime;
 
     Overlay::OverlayManager m_OverlayManager;
+    std::atomic_bool m_AppWindowChildWatcherActive {false};
+    std::thread m_AppWindowChildWatcherThread;
+    QSet<int> m_AppWindowChildLaunches;
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;

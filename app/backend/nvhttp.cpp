@@ -319,6 +319,26 @@ NvHTTP::getAppList()
             else if (name == QString("IsAppCollectorGame")) {
                 apps.last().isAppCollectorGame = xmlReader.readElementText() == "1";
             }
+            else if (name == QString("AppStreamResolution")) {
+                apps.last().streamResolution = xmlReader.readElementText();
+            }
+            else if (name == QString("AppClientDisplayMode")) {
+                apps.last().clientDisplayMode = xmlReader.readElementText();
+            }
+            else if (name == QString("AppAutoSpawnFrom")) {
+                apps.last().autoSpawnFrom = xmlReader.readElementText();
+            }
+            else if (name == QString("AppWindowReady")) {
+                apps.last().appWindowReady = xmlReader.readElementText() == "1";
+            }
+            else if (name == QString("AppClientAppWindow")) {
+                apps.last().clientAppWindowSet = true;
+                apps.last().clientAppWindow = xmlReader.readElementText() == "1";
+            }
+            else if (name == QString("AppClientAbsoluteMouse")) {
+                apps.last().clientAbsoluteMouseSet = true;
+                apps.last().clientAbsoluteMouse = xmlReader.readElementText() == "1";
+            }
         }
     }
 

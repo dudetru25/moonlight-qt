@@ -1,4 +1,5 @@
 #include "streamingpreferences.h"
+#include "backend/nvapp.h"
 #include "utils.h"
 
 #include <QSettings>
@@ -6,6 +7,7 @@
 #include <QCoreApplication>
 #include <QLocale>
 #include <QReadWriteLock>
+#include <QRegularExpression>
 #include <QtMath>
 
 #include <QtDebug>
@@ -150,6 +152,7 @@ void StreamingPreferences::reload()
     reverseScrollDirection = settings.value(SER_REVERSESCROLL, false).toBool();
     swapFaceButtons = settings.value(SER_SWAPFACEBUTTONS, false).toBool();
     keepAwake = settings.value(SER_KEEPAWAKE, true).toBool();
+    appWindowMode = false;
     enableHdr = settings.value(SER_HDR, false).toBool();
     captureSysKeysMode = static_cast<CaptureSysKeysMode>(settings.value(SER_CAPTURESYSKEYS,
                                                          static_cast<int>(CaptureSysKeysMode::CSK_OFF)).toInt());
@@ -189,6 +192,107 @@ void StreamingPreferences::reload()
     if (videoCodecConfig == VCC_FORCE_HEVC_HDR_DEPRECATED) {
         videoCodecConfig = VCC_AUTO;
         enableHdr = true;
+    }
+}
+
+StreamingPreferences* StreamingPreferences::copyForApp(const NvApp& app) const
+{
+    auto *prefs = new StreamingPreferences(nullptr);
+    prefs->copyFrom(*this);
+    prefs->applyAppSettings(app);
+    return prefs;
+}
+
+void StreamingPreferences::copyFrom(const StreamingPreferences& other)
+{
+    width = other.width;
+    height = other.height;
+    fps = other.fps;
+    bitrateKbps = other.bitrateKbps;
+    unlockBitrate = other.unlockBitrate;
+    autoAdjustBitrate = other.autoAdjustBitrate;
+    enableVsync = other.enableVsync;
+    gameOptimizations = other.gameOptimizations;
+    playAudioOnHost = other.playAudioOnHost;
+    multiController = other.multiController;
+    enableMdns = other.enableMdns;
+    quitAppAfter = other.quitAppAfter;
+    absoluteMouseMode = other.absoluteMouseMode;
+    absoluteTouchMode = other.absoluteTouchMode;
+    framePacing = other.framePacing;
+    connectionWarnings = other.connectionWarnings;
+    configurationWarnings = other.configurationWarnings;
+    richPresence = other.richPresence;
+    gamepadMouse = other.gamepadMouse;
+    detectNetworkBlocking = other.detectNetworkBlocking;
+    showPerformanceOverlay = other.showPerformanceOverlay;
+    swapMouseButtons = other.swapMouseButtons;
+    muteOnFocusLoss = other.muteOnFocusLoss;
+    backgroundGamepad = other.backgroundGamepad;
+    reverseScrollDirection = other.reverseScrollDirection;
+    swapFaceButtons = other.swapFaceButtons;
+    keepAwake = other.keepAwake;
+    appWindowMode = other.appWindowMode;
+    packetSize = other.packetSize;
+    audioConfig = other.audioConfig;
+    videoCodecConfig = other.videoCodecConfig;
+    enableHdr = other.enableHdr;
+    enableYUV444 = other.enableYUV444;
+    videoDecoderSelection = other.videoDecoderSelection;
+    windowMode = other.windowMode;
+    recommendedFullScreenMode = other.recommendedFullScreenMode;
+    uiDisplayMode = other.uiDisplayMode;
+    language = other.language;
+    captureSysKeysMode = other.captureSysKeysMode;
+}
+
+void StreamingPreferences::applyAppSettings(const NvApp& app)
+{
+    if (!app.streamResolution.isEmpty()) {
+        static const QRegularExpression resolutionRegex(QStringLiteral(R"(^\s*(\d+)x(\d+)\s*$)"));
+        auto match = resolutionRegex.match(app.streamResolution);
+        if (match.hasMatch()) {
+            int overrideWidth = match.captured(1).toInt();
+            int overrideHeight = match.captured(2).toInt();
+            if (overrideWidth > 0 && overrideHeight > 0) {
+                width = overrideWidth;
+                height = overrideHeight;
+                if (!unlockBitrate) {
+                    bitrateKbps = getDefaultBitrate(width, height, fps, enableYUV444);
+                }
+                qInfo() << "Applied app stream resolution override:" << app.name << app.streamResolution;
+            }
+        }
+        else {
+            qWarning() << "Ignoring invalid app stream resolution override:" << app.name << app.streamResolution;
+        }
+    }
+
+    QString displayMode = app.clientDisplayMode.trimmed().toLower();
+    if (!displayMode.isEmpty()) {
+        if (displayMode == QStringLiteral("windowed")) {
+            windowMode = WM_WINDOWED;
+        }
+        else if (displayMode == QStringLiteral("fullscreen")) {
+            windowMode = WM_FULLSCREEN;
+        }
+        else if (displayMode == QStringLiteral("borderless") ||
+                 displayMode == QStringLiteral("fullscreen-desktop")) {
+            windowMode = WM_FULLSCREEN_DESKTOP;
+        }
+        else {
+            qWarning() << "Ignoring invalid app display mode override:" << app.name << app.clientDisplayMode;
+        }
+    }
+
+    if (app.clientAppWindowSet) {
+        appWindowMode = app.clientAppWindow;
+        qInfo() << "Applied app-window mode override:" << app.name << appWindowMode;
+    }
+
+    if (app.clientAbsoluteMouseSet) {
+        absoluteMouseMode = app.clientAbsoluteMouse;
+        qInfo() << "Applied absolute mouse override:" << app.name << absoluteMouseMode;
     }
 }
 

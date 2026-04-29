@@ -7,6 +7,10 @@
 #include "SDL_compat.h"
 #include "utils.h"
 
+#ifdef Q_OS_DARWIN
+#include "streaming/macwindow.h"
+#endif
+
 #ifdef HAVE_FFMPEG
 #include "video/ffmpeg.h"
 #endif
@@ -40,6 +44,9 @@
 #include <QGuiApplication>
 #include <QCursor>
 #include <QScreen>
+#include <QProcess>
+
+#include <chrono>
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QQuickOpenGLUtils>
@@ -548,7 +555,8 @@ bool Session::populateDecoderProperties(SDL_Window* window)
 }
 
 Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences)
-    : m_Preferences(preferences ? preferences : StreamingPreferences::get()),
+    : m_SessionPreferences((preferences ? preferences : StreamingPreferences::get())->copyForApp(app)),
+      m_Preferences(m_SessionPreferences.data()),
       m_IsFullScreen(m_Preferences->windowMode != StreamingPreferences::WM_WINDOWED || !WMUtils::isRunningDesktopEnvironment()),
       m_Computer(computer),
       m_App(app),
@@ -1250,7 +1258,8 @@ private:
         // Only quit the running app if our session terminated gracefully
         bool shouldQuit =
                 !m_Session->m_UnexpectedTermination &&
-                m_Session->m_Preferences->quitAppAfter;
+                m_Session->m_Preferences->quitAppAfter &&
+                !m_Session->m_Preferences->appWindowMode;
 
         // Notify the UI
         if (shouldQuit) {
@@ -1588,7 +1597,8 @@ bool Session::startConnectionAsync()
 
     try {
         NvHTTP http(m_Computer);
-        http.startApp(m_Computer->currentGameId != 0 ? "resume" : "launch",
+        const QString verb = (m_Computer->currentGameId != 0 && !m_Preferences->appWindowMode) ? "resume" : "launch";
+        http.startApp(verb,
                       m_Computer->isNvidiaServerSoftware,
                       m_App.id, &m_StreamConfig,
                       enableGameOptimizations,
@@ -1723,6 +1733,75 @@ void Session::setShouldExit(bool quitHostApp)
     m_ShouldExit = true;
 }
 
+void Session::startAppWindowChildWatcher()
+{
+    if (!m_Preferences->appWindowMode || m_App.name.isEmpty()) {
+        return;
+    }
+
+    if (m_AppWindowChildWatcherActive.exchange(true)) {
+        return;
+    }
+
+    m_AppWindowChildLaunches.clear();
+
+    NvAddress address = m_Computer->activeAddress;
+    uint16_t httpsPort = m_Computer->activeHttpsPort;
+    QSslCertificate serverCert = m_Computer->serverCert;
+    QString parentAppName = m_App.name;
+    QString executablePath = QCoreApplication::applicationFilePath();
+
+    m_AppWindowChildWatcherThread = std::thread([this, address, httpsPort, serverCert, parentAppName, executablePath]() mutable {
+        NvHTTP http(address, httpsPort, serverCert);
+
+        while (m_AppWindowChildWatcherActive.load()) {
+            try {
+                QVector<NvApp> apps = http.getAppList();
+                for (const NvApp& app : apps) {
+                    if (!m_AppWindowChildWatcherActive.load()) {
+                        break;
+                    }
+
+                    if (!app.clientAppWindow ||
+                            !app.appWindowReady ||
+                            app.autoSpawnFrom.compare(parentAppName, Qt::CaseInsensitive) != 0 ||
+                            m_AppWindowChildLaunches.contains(app.id)) {
+                        continue;
+                    }
+
+                    QStringList arguments;
+                    arguments << QStringLiteral("stream")
+                              << address.address()
+                              << app.name;
+
+                    if (QProcess::startDetached(executablePath, arguments)) {
+                        m_AppWindowChildLaunches.insert(app.id);
+                        qInfo() << "Started child app-window stream:" << app.name << "from" << parentAppName;
+                    }
+                    else {
+                        qWarning() << "Failed to start child app-window stream:" << app.name;
+                    }
+                }
+            }
+            catch (const std::exception& e) {
+                qWarning() << "App-window child watcher failed:" << e.what();
+            }
+
+            for (int i = 0; i < 10 && m_AppWindowChildWatcherActive.load(); i++) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            }
+        }
+    });
+}
+
+void Session::stopAppWindowChildWatcher()
+{
+    m_AppWindowChildWatcherActive = false;
+    if (m_AppWindowChildWatcherThread.joinable()) {
+        m_AppWindowChildWatcherThread.join();
+    }
+}
+
 void Session::start()
 {
     // Wait for any old session to finish cleanup
@@ -1790,7 +1869,8 @@ void Session::exec()
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
 
-    // We always want a resizable window with High DPI enabled
+    // Normal streams keep Moonlight's standard resizable window behavior. App
+    // streams opt into client chrome that behaves like a lightweight app shell.
     Uint32 defaultWindowFlags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE;
 
     // If we're starting in windowed mode and the Moonlight GUI is maximized or
@@ -1818,9 +1898,9 @@ void Session::exec()
     // We use only the computer name on macOS to match Apple conventions where the
     // app name is featured in the menu bar and the document name is in the title bar.
 #ifdef Q_OS_DARWIN
-    std::string windowName = QString(m_Computer->name).toStdString();
+    std::string windowName = QString(m_Preferences->appWindowMode ? m_App.name : m_Computer->name).toStdString();
 #else
-    std::string windowName = QString(m_Computer->name + " - Moonlight").toStdString();
+    std::string windowName = QString((m_Preferences->appWindowMode ? m_App.name : m_Computer->name) + " - Moonlight").toStdString();
 #endif
 
     m_Window = SDL_CreateWindow(windowName.c_str(),
@@ -1851,6 +1931,14 @@ void Session::exec()
             QThreadPool::globalInstance()->start(new DeferredSessionCleanupTask(this));
             return;
         }
+    }
+
+    if (m_Preferences->appWindowMode) {
+#ifdef Q_OS_DARWIN
+        MacWindow::configureAppStreamWindow(m_Window);
+#else
+        SDL_SetWindowBordered(m_Window, SDL_FALSE);
+#endif
     }
 
     m_InputHandler->setWindow(m_Window);
@@ -1936,6 +2024,8 @@ void Session::exec()
 
     // Switch to async logging mode when we enter the SDL loop
     StreamUtils::enterAsyncLoggingMode();
+
+    startAppWindowChildWatcher();
 
     // Hijack this thread to be the SDL main thread. We have to do this
     // because we want to suspend all Qt processing until the stream is over.
@@ -2284,6 +2374,8 @@ void Session::exec()
     }
 
 DispatchDeferredCleanup:
+    stopAppWindowChildWatcher();
+
     // Switch back to synchronous logging mode
     StreamUtils::exitAsyncLoggingMode();
 

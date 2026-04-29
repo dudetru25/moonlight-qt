@@ -4,6 +4,8 @@
 #include <QRect>
 #include <QQmlEngine>
 
+class NvApp;
+
 class StreamingPreferences : public QObject
 {
     Q_OBJECT
@@ -17,6 +19,7 @@ public:
     Q_INVOKABLE void save();
 
     void reload();
+    StreamingPreferences* copyForApp(const NvApp& app) const;
 
     enum AudioConfig
     {
@@ -176,6 +179,7 @@ public:
     bool reverseScrollDirection;
     bool swapFaceButtons;
     bool keepAwake;
+    bool appWindowMode;
     int packetSize;
     AudioConfig audioConfig;
     VideoCodecConfig videoCodecConfig;
@@ -229,7 +233,8 @@ private:
     explicit StreamingPreferences(QQmlEngine *qmlEngine);
 
     QString getSuffixFromLanguage(Language lang);
+    void copyFrom(const StreamingPreferences& other);
+    void applyAppSettings(const NvApp& app);
 
     QQmlEngine* m_QmlEngine;
 };
-

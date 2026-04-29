@@ -32,3 +32,9 @@ CONFIG(release, debug|release) {
 QMAKE_CFLAGS   += $$(CFLAGS)
 QMAKE_CXXFLAGS += $$(CXXFLAGS)
 QMAKE_LFLAGS   += $$(LDFLAGS)
+
+# Qt 6.11 + Xcode 26 : qyieldcpu.h uses __yield() without including arm_acle.h
+macx:contains(QT_ARCH, arm64) {
+    QMAKE_CFLAGS   += -include arm_acle.h
+    QMAKE_CXXFLAGS += -include arm_acle.h
+}

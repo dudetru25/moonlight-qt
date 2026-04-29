@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 *pro.user
 
 
@@ -6,3 +9,23 @@
 build/
 config.tests/*/.qmake.stash
 config.tests/*/Makefile
+
+# qmake/build output
+.qmake.cache
+.qmake.stash
+Makefile
+config.log
+app/Makefile*
+app/release/
+app/Moonlight.app/
+app/qml_qmlcache.qrc
+app/Info.plist-e
+h264bitstream/Makefile*
+h264bitstream/release/
+h264bitstream/*.a
+moonlight-common-c/Makefile*
+moonlight-common-c/release/
+moonlight-common-c/*.a
+qmdnsengine/Makefile*
+qmdnsengine/release/
+qmdnsengine/*.a
