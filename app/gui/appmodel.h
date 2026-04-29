@@ -19,6 +19,9 @@ class AppModel : public QAbstractListModel
         AppIdRole,
         DirectLaunchRole,
         AppCollectorGameRole,
+        CategoryRole,
+        ModeRole,
+        ResolutionRole,
     };
 
 public:
@@ -56,6 +59,10 @@ signals:
     void computerLost();
 
 private:
+    static QString categoryForApp(const NvApp& app);
+    static QString modeForApp(const NvApp& app);
+    static bool appLessThan(const NvApp& left, const NvApp& right);
+
     void updateAppList(QVector<NvApp> newList);
 
     QVector<NvApp> getVisibleApps(const QVector<NvApp>& appList);

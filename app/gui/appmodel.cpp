@@ -1,5 +1,7 @@
 #include "appmodel.h"
 
+#include <algorithm>
+
 AppModel::AppModel(QObject *parent)
     : QAbstractListModel(parent)
 {
@@ -93,6 +95,12 @@ QVariant AppModel::data(const QModelIndex &index, int role) const
         return app.directLaunch;
     case AppCollectorGameRole:
         return app.isAppCollectorGame;
+    case CategoryRole:
+        return categoryForApp(app);
+    case ModeRole:
+        return modeForApp(app);
+    case ResolutionRole:
+        return app.streamResolution.isEmpty() ? QStringLiteral("Default") : app.streamResolution;
     default:
         return QVariant();
     }
@@ -109,6 +117,9 @@ QHash<int, QByteArray> AppModel::roleNames() const
     names[AppIdRole] = "appid";
     names[DirectLaunchRole] = "directLaunch";
     names[AppCollectorGameRole] = "appCollectorGame";
+    names[CategoryRole] = "category";
+    names[ModeRole] = "mode";
+    names[ResolutionRole] = "resolution";
 
     return names;
 }
@@ -134,6 +145,10 @@ QVector<NvApp> AppModel::getVisibleApps(const QVector<NvApp>& appList)
     QVector<NvApp> visibleApps;
 
     for (const NvApp& app : appList) {
+        if (!m_ShowHiddenGames && !app.autoSpawnFrom.isEmpty() && !isAppCurrentlyVisible(app)) {
+            continue;
+        }
+
         // Don't immediately hide games that were previously visible. This
         // allows users to easily uncheck the "Hide App" checkbox if they
         // check it by mistake.
@@ -145,11 +160,43 @@ QVector<NvApp> AppModel::getVisibleApps(const QVector<NvApp>& appList)
     return visibleApps;
 }
 
+QString AppModel::categoryForApp(const NvApp& app)
+{
+    return app.name.compare(QStringLiteral("Desktop"), Qt::CaseInsensitive) == 0 ?
+               QStringLiteral("Display") :
+               QStringLiteral("Applications");
+}
+
+QString AppModel::modeForApp(const NvApp& app)
+{
+    if (app.name.compare(QStringLiteral("Desktop"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("Desktop");
+    }
+
+    if (app.clientAppWindowSet && app.clientAppWindow) {
+        return QStringLiteral("App Window");
+    }
+
+    return app.clientDisplayMode.isEmpty() ? QStringLiteral("Stream") : app.clientDisplayMode;
+}
+
+bool AppModel::appLessThan(const NvApp& left, const NvApp& right)
+{
+    const bool leftDesktop = left.name.compare(QStringLiteral("Desktop"), Qt::CaseInsensitive) == 0;
+    const bool rightDesktop = right.name.compare(QStringLiteral("Desktop"), Qt::CaseInsensitive) == 0;
+    if (leftDesktop != rightDesktop) {
+        return leftDesktop;
+    }
+
+    return QString::compare(left.name, right.name, Qt::CaseInsensitive) < 0;
+}
+
 void AppModel::updateAppList(QVector<NvApp> newList)
 {
     m_AllApps = newList;
 
     QVector<NvApp> newVisibleList = getVisibleApps(newList);
+    std::sort(newVisibleList.begin(), newVisibleList.end(), appLessThan);
 
     // Process removals and updates first
     for (int i = 0; i < m_VisibleApps.count(); i++) {
@@ -189,7 +236,7 @@ void AppModel::updateAppList(QVector<NvApp> newList)
                 found = true;
                 break;
             }
-            else if (existingApp.name.toLower() > newApp.name.toLower()) {
+            else if (appLessThan(newApp, existingApp)) {
                 insertionIndex = i;
                 break;
             }
